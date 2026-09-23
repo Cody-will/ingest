@@ -1,0 +1,4 @@
+[config]
+dest = "~/Pictures/"
+dry_run = true
+image_types = ["jpg", "jpeg", "png", "raw"]
