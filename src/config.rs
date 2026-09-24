@@ -1,31 +1,52 @@
-use std::path::{PathBuf};
-use serde::{Deserialize};
+use std::{fs::FileType, path::PathBuf};
 
-const DEFAULT: &str = include_str!("../default_config.toml");
+use serde::Deserialize;
 
-#[derive(Deserialize, Debug)]
-#[serde(default)]
-pub struct Config {
-    dest: Option<PathBuf>,
-    src: Option<PathBuf>,
-    dry_run: Option<bool>,
-    image_types: Option<Vec<String>>,
+const DEFAULT_TOML: &str = include_str!("../default_config.toml");
+
+#[derive(Debug, Deserialize)]
+struct File {
+    config: Config,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        let path = PathBuf::from(DEFAULT);
-        let raw = std::fs::read_to_string(&path).expect("failed to read config file"); 
-        let cfg: Config = toml::from_str(&raw).expect("Failed to parse config file");        
+#[derive(Debug, Clone, Deserialize)]
+pub struct Config {
+    pub dest: PathBuf,
+    pub src: Option<PathBuf>,
+    #[serde(default = "default_dry_run")]
+    pub dry_run: bool,
+    pub image_types: Vec<String>,
+}
 
-        Self {
-            dest: Some(cfg.dest.unwrap()),
-            src: None,
-            dry_run: Some(cfg.dry_run.unwrap_or(true)),
-            image_types: Some(cfg.image_types.unwrap()),
-        }
+fn default_dry_run() -> bool {
+    true
+}
+
+impl Config { 
+    pub fn default_from_toml() -> Self {
+        let file: File = toml::from_str(DEFAULT_TOML).expect("default_config.toml is invalid");
+        let mut cfg = file.config;
+        cfg.dest = expand_tilde(cfg.dest);
+        cfg.src = cfg.src.map(expand_tilde);
+        cfg.image_types = cfg
+            .image_types
+            .into_iter()
+            .map(|s| s.to_ascii_lowercase())
+            .collect();
+        cfg
+    }
+
+    pub fn allows_ext(&self, ext: &str) -> bool {
+        self.image_types
+            .iter()
+            .any(|t| t.eq_ignore_ascii_case(ext))
     }
 }
 
-
-
+fn expand_tilde(path: PathBuf) -> PathBuf {
+    let raw = path.to_string_lossy();
+    if let Some(rest) = raw.strip_prefix("~/") && let Some(home) = std::env::var_os("HOME") { 
+        return PathBuf::from(home).join(rest); 
+    }
+    path
+}
